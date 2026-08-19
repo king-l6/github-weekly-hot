@@ -1,4 +1,4 @@
-import type { SearchResponse, TimeRange } from './types'
+import type { Repo, SearchResponse, TimeRange } from './types'
 
 function startDateFor(range: TimeRange): string {
   const now = new Date()
@@ -7,14 +7,17 @@ function startDateFor(range: TimeRange): string {
   return now.toISOString().slice(0, 10)
 }
 
-export async function fetchHotRepos(
-  range: TimeRange,
-  language?: string,
-): Promise<SearchResponse> {
+function dailyStars(repo: Repo): number {
+  const ageMs = Date.now() - new Date(repo.created_at).getTime()
+  const ageDays = Math.max(ageMs / 86_400_000, 1)
+  return repo.stargazers_count / ageDays
+}
+
+export async function fetchHotRepos(range: TimeRange, language?: string): Promise<Repo[]> {
   const parts = [`created:>${startDateFor(range)}`]
   if (language) parts.push(`language:${language}`)
   const q = encodeURIComponent(parts.join(' '))
-  const url = `https://api.github.com/search/repositories?q=${q}&sort=stars&order=desc&per_page=30`
+  const url = `https://api.github.com/search/repositories?q=${q}&sort=stars&order=desc&per_page=100`
 
   const res = await fetch(url, {
     headers: { Accept: 'application/vnd.github+json' },
@@ -27,5 +30,9 @@ export async function fetchHotRepos(
     throw new Error(`请求失败:${res.status} ${res.statusText}`)
   }
 
-  return res.json()
+  const data: SearchResponse = await res.json()
+  return data.items
+    .map((repo) => ({ ...repo, dailyStars: dailyStars(repo) }))
+    .sort((a, b) => b.dailyStars - a.dailyStars)
+    .slice(0, 30)
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchHotRepos } from './api'
+import { translateToZh } from './translate'
 import type { Repo, TimeRange } from './types'
 
 const RANGES: { key: TimeRange; label: string }[] = [
@@ -28,6 +29,7 @@ export default function App() {
   const [range, setRange] = useState<TimeRange>('week')
   const [language, setLanguage] = useState('')
   const [repos, setRepos] = useState<Repo[]>([])
+  const [descZh, setDescZh] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -35,9 +37,17 @@ export default function App() {
     let cancelled = false
     setLoading(true)
     setError('')
+    setDescZh({})
     fetchHotRepos(range, language || undefined)
-      .then((data) => {
-        if (!cancelled) setRepos(data.items)
+      .then((items) => {
+        if (cancelled) return
+        setRepos(items)
+        items.forEach((repo) => {
+          if (!repo.description) return
+          translateToZh(repo.description).then((zh) => {
+            if (!cancelled) setDescZh((prev) => ({ ...prev, [repo.id]: zh }))
+          })
+        })
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message)
@@ -53,9 +63,9 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🔥 GitHub 最火项目榜</h1>
+        <h1>🔥 GitHub star 增长最快榜</h1>
         <p className="subtitle">
-          按“时间范围内新建 + star 数最高”排序,近似呈现当前最火的新项目
+          按“平均每天新增 star 数”排序,呈现时间范围内涨得最快的新项目
         </p>
       </header>
 
@@ -99,8 +109,15 @@ export default function App() {
               <a className="repo-name" href={repo.html_url} target="_blank" rel="noreferrer">
                 {repo.full_name}
               </a>
-              {repo.description && <p className="repo-desc">{repo.description}</p>}
+              {repo.description && (
+                <p className="repo-desc">{descZh[repo.id] || repo.description}</p>
+              )}
               <div className="repo-meta">
+                {repo.dailyStars != null && (
+                  <span className="meta-item growth">
+                    🚀 每天 +{Math.round(repo.dailyStars)} ⭐
+                  </span>
+                )}
                 {repo.language && (
                   <span className="meta-item">
                     <span
